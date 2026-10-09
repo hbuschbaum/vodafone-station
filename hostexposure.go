@@ -22,9 +22,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go.mdl.wtf/go-macaddr"
 	"io"
 	"strconv"
-	"go.mdl.wtf/go-macaddr"
 )
 
 type hostExposureEntry struct {
@@ -54,7 +54,7 @@ type dhcpClientEntry []string
 
 type requestedHostExposure struct {
 	HostExposure []requestedHostExposureEntry `json:"hostExposure"`
-	DhcpClient []dhcpClientEntry `json:"dhcpclient"`
+	DhcpClient   []dhcpClientEntry            `json:"dhcpclient"`
 }
 
 type setHostExposure struct {
@@ -219,65 +219,6 @@ func (v *Vodafone) HostExposureGet() ([]ExposedHost, error) {
 	return ret, nil
 }
 
-// Returns whether a given macAddress is present in the list of exposed hosts.
-// It does not state whether the found rule is enabled.
-func (v *Vodafone) HostExposureContainsMac(macAddress string) (bool, error) {
-	mac, err := macaddr.ParseMACAddress(macAddress)
-	if err != nil {
-		return false, err
-	}
-
-	hosts, err := v.HostExposureGet()
-	if err != nil {
-		return false, err
-	}
-
-	for _, e := range hosts {
-		if e.MacAddress.Equal(mac) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// Returns whether a given name is present in the list of exposed hosts.
-// It does not state whether the found rule is enabled.
-func (v *Vodafone) HostExposureContainsName(name string) (bool, error) {
-	rq, err := v.getRawHostsAndNames()
-	if err != nil {
-		return false, err
-	}
-
-	var macs []*macaddr.MACAddress // this is an array since several hosts could have the same name
-	for _, host := range rq.DhcpClient {
-		if name == host[0] {
-			mac, err := macaddr.ParseMACAddress(host[1]) // save the mac address for this host
-			if err != nil {
-				return false, err
-			}
-			macs = append(macs, mac)
-			break
-		}
-	}
-	if len(macs) == 0 {
-		return false, nil // there is no host with the given name
-	}
-
-	for _, mac := range macs {
-		for _, e := range rq.HostExposure {
-			hostMac, err := macaddr.ParseMACAddress(e.MacAddress)
-			if err != nil {
-				return false, err
-			}
-			if hostMac.Equal(mac) {
-				return true, nil // we have found one match. Thats enough, we return
-			}
-		}
-	}
-
-	return false, nil // we have found no match
-}
-
 // Sets the list of exposed hosts.
 // This function does not append hosts, it overrides the current list.
 func (v *Vodafone) HostExposureSet(exposedHosts []ExposedHost) error {
@@ -301,28 +242,4 @@ func (v *Vodafone) HostExposureSet(exposedHosts []ExposedHost) error {
 
 	_, err = v.Post("ajaxSet_net_ipv6_host_exposure_data.php", r)
 	return err
-}
-
-// Appends an [ExposedHost] to the list of exposed hosts. Any set [ExposedHost.Index] will be overwritten by tge correct one.
-func (v *Vodafone) HostExposureAppend(exposedHost ExposedHost) error {
-	if !v.loggedIn {
-		return &NotLoggedInError{}
-	}
-
-	hosts, err := v.HostExposureGet()
-	if err != nil {
-		return err
-	}
-
-	maxIndex := 0
-	for _, h := range hosts {
-		if h.Index > maxIndex {
-			maxIndex = h.Index
-		}
-	}
-
-	exposedHost.Index = maxIndex + 1
-	hosts = append(hosts, exposedHost)
-
-	return v.HostExposureSet(hosts)
 }

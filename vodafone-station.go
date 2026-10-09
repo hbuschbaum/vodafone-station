@@ -175,7 +175,7 @@ type loginResponse struct {
 	WaitTime    int    `json:"p_waitTime"`
 }
 
-// Inititates a login request given the username and password. 
+// Inititates a login request given the username and password.
 func (v *Vodafone) Login(username, password string) error {
 	if v.loggedIn {
 		return nil
