@@ -28,8 +28,6 @@ import (
 	"strconv"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
-
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 
@@ -52,6 +50,7 @@ type Vodafone struct {
 	loggedIn  bool
 }
 
+// Returns a new [Vodafone] instance given a host.
 func NewVodafone(host string) *Vodafone {
 	v := &Vodafone{
 		host:     host,
@@ -74,10 +73,14 @@ func (v *Vodafone) fillHeader(h *http.Header) {
 	}
 }
 
+// Get triggers a GET request for the given endpoint. At most one params may be given.
+// This value is then appended as a query parameter.
 func (v *Vodafone) Get(endpoint string, params ...string) (*http.Response, error) {
 	realParams := ""
-	if len(params) > 0 {
+	if len(params) == 1 {
 		realParams = "&" + url.QueryEscape(params[0])
+	} else if len(params) > 1 {
+		return nil, fmt.Errorf("At most one parameter allowed")
 	}
 	req, err := http.NewRequest("GET", v.host+"/php/"+endpoint+"?_n="+v.nonce+realParams, nil)
 	if err != nil {
@@ -96,10 +99,12 @@ func (v *Vodafone) putPost(method string, endpoint string, data io.Reader) (*htt
 	return v.client.Do(req)
 }
 
+// Put triggers a PUT request on a given [Vodafone] instance. The data is sent as is to the given endpoint.
 func (v *Vodafone) Put(endpoint string, data io.Reader) (*http.Response, error) {
 	return v.putPost("PUT", endpoint, data)
 }
 
+// Post triggers a Post request on a given [Vodafone] instance. The data is sent as is to the given endpoint.
 func (v *Vodafone) Post(endpoint string, data io.Reader) (*http.Response, error) {
 	return v.putPost("POST", endpoint, data)
 }
@@ -167,45 +172,48 @@ type loginResponse struct {
 	WaitTime    int    `json:"p_waitTime"`
 }
 
+// Inititates a login request given the username and password. 
 func (v *Vodafone) Login(username, password string) error {
-	log.WithFields(log.Fields{"username": username}).Trace("Function Login")
 	if v.loggedIn {
 		return nil
 	}
 
-	if err := v.initCrypto(); err != nil {
+	if err := v.initCrypto(); err != nil { // initiate the crypto values which are sent from the vodafone station
 		return err
 	}
 	jsData := fmt.Sprintf("{\"Password\": \"%s\", \"Nonce\": \"%s\"}", password, v.sessionId)
 	var err error
+	// get current session key derived from the user supplied password
 	v.key, err = crypto.Pbkdf2(password, v.salt, crypto.DEFAULT_ITERATIONS, crypto.DEFAULT_KEYSIZEBYTES)
 	if err != nil {
 		return err
 	}
-	log.WithField("key", v.key).Trace("Derived Key")
 	const authData string = "loginPassword"
 
+	// encrypt the passwort and nonce with the derived key
 	encryptedData, err := crypto.CCMencrypt(v.key, jsData, v.iv, authData, crypto.DEFAULT_TAGLENGTH)
 	if err != nil {
 		return err
 	}
-	log.Debug("Encrypted data: ", hex.EncodeToString(encryptedData))
+	//send the encrypted password to the vodafone station
 	loginData := fmt.Sprintf("{\"EncryptData\":\"%s\",\"Name\":\"%s\",\"AuthData\":\"%s\"}", hex.EncodeToString(encryptedData), username, authData)
 	resp, err := v.Post("ajaxSet_Password.php", strings.NewReader(loginData))
 	if err != nil {
 		return err
 	}
-	log.Debug("Sent Data")
 	defer resp.Body.Close()
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	log.Trace(string(body))
+
 	var lresponse loginResponse
 	if err := json.Unmarshal(body, &lresponse); err != nil {
 		return err
 	}
+
+	// check the response status
 	switch lresponse.PStatus {
 	case "Fail":
 		return fmt.Errorf("Login failed: Wrong Password")
@@ -218,16 +226,18 @@ func (v *Vodafone) Login(username, password string) error {
 		}
 		v.sessionId = strings.Split(strings.Split(setCookieValues[0], "=")[1], ";")[0]
 		v.cookie = "PHPSESSID=" + v.sessionId
+		// the nonce is also sent encrypted, so decrypt it
 		csrfNonce, err := crypto.CCMdecrypt(v.key, lresponse.EncryptData, v.iv, "nonce", crypto.DEFAULT_TAGLENGTH)
 		if err != nil {
 			return err
 		}
 		v.csrfNonce = string(csrfNonce)
-		return v.setSession()
+		return v.setSession() // check if login was successful
 	}
 	return fmt.Errorf("Unknown p_status: %s", lresponse.PStatus)
 }
 
+// Requests a logout.
 func (v *Vodafone) Logout() {
 	v.Post("logout.php", nil)
 	v.loggedIn = false
