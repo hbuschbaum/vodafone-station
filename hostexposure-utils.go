@@ -1,21 +1,22 @@
 package vodafone
 
 import (
+	"bytes"
 	"fmt"
 
-	"go.mdl.wtf/go-macaddr"
+	"net"
 )
 
 // Returns whether a given macAddress is present in the list of exposed hosts.
 // It does not state whether the found rule is enabled.
-func (v *Vodafone) HostExposureContainsMac(macAddress *macaddr.MACAddress) (bool, error) {
+func (v *Vodafone) HostExposureContainsMac(macAddress net.HardwareAddr) (bool, error) {
 	hosts, err := v.HostExposureGet()
 	if err != nil {
 		return false, err
 	}
 
 	for _, e := range hosts {
-		if e.MacAddress.Equal(macAddress) {
+		if bytes.Equal(e.MacAddress, macAddress) {
 			return true, nil
 		}
 	}
@@ -30,10 +31,10 @@ func (v *Vodafone) HostExposureContainsName(name string) (bool, error) {
 		return false, err
 	}
 
-	var macs []*macaddr.MACAddress // this is an array since several hosts could have the same name
+	var macs []net.HardwareAddr // this is an array since several hosts could have the same name
 	for _, host := range rq.DhcpClient {
 		if name == host[0] {
-			mac, err := macaddr.ParseMACAddress(host[1]) // save the mac address for this host
+			mac, err := net.ParseMAC(host[1]) // save the mac address for this host
 			if err != nil {
 				return false, err
 			}
@@ -47,11 +48,11 @@ func (v *Vodafone) HostExposureContainsName(name string) (bool, error) {
 
 	for _, mac := range macs {
 		for _, e := range rq.HostExposure {
-			hostMac, err := macaddr.ParseMACAddress(e.MacAddress)
+			hostMac, err := net.ParseMAC(e.MacAddress)
 			if err != nil {
 				return false, err
 			}
-			if hostMac.Equal(mac) {
+			if bytes.Equal(hostMac, mac) {
 				return true, nil // we have found one match. Thats enough, we return
 			}
 		}
@@ -85,7 +86,7 @@ func (v *Vodafone) HostExposureAppend(exposedHost ExposedHost) error {
 }
 
 // Appends the stated rule to the exposed hosts. The host is identified via its macAddress.
-func (v *Vodafone) HostExposureAppendRuleByMac(ruleName string, macAddress *macaddr.MACAddress, startPort int, endPort int, protocol ProtocolType, enabled bool) error {
+func (v *Vodafone) HostExposureAppendRuleByMac(ruleName string, macAddress net.HardwareAddr, startPort int, endPort int, protocol ProtocolType, enabled bool) error {
 	host := ExposedHost{
 		0,
 		ruleName,
@@ -106,13 +107,16 @@ func (v *Vodafone) HostExposureAppendRuleByName(ruleName string, hostname string
 		return err
 	}
 
-	var mac *macaddr.MACAddress
+	var mac net.HardwareAddr = nil
 	for _, host := range rq.DhcpClient {
 		if host[0] == hostname {
 			if mac != nil {
 				return fmt.Errorf("Multiple hosts with the same name exist")
 			}
-			mac, err = macaddr.ParseMACAddress(host[1])
+			mac, err = net.ParseMAC(host[1])
+			if err != nil {
+				return err
+			}
 		}
 	}
 

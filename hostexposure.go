@@ -22,8 +22,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"go.mdl.wtf/go-macaddr"
 	"io"
+	"net"
 	"strconv"
 )
 
@@ -107,7 +107,7 @@ type ExposedHost struct {
 	Enabled    bool
 	StartPort  int
 	EndPort    int
-	MacAddress *macaddr.MACAddress
+	MacAddress net.HardwareAddr
 	Protocol   ProtocolType
 }
 
@@ -142,7 +142,7 @@ func parseExposedHost(e requestedHostExposureEntry) (ExposedHost, error) {
 		return ExposedHost{}, err
 	}
 
-	mac, err := macaddr.ParseMACAddress(e.MacAddress)
+	mac, err := net.ParseMAC(e.MacAddress)
 	if err != nil {
 		return ExposedHost{}, err
 	}
