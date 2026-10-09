@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"go.mdl.wtf/go-macaddr"
 )
 
 type hostExposureEntry struct {
@@ -33,6 +34,8 @@ type hostExposureEntry struct {
 	StartPort string `json:"startPort"`
 }
 
+// A funny quirk of vodafone stations: different names for the same thing
+// depending on whether you get the host exposure entry or set it
 type requestedHostExposureEntry struct {
 	hostExposureEntry
 	Status     string `json:"Status"`
@@ -47,8 +50,11 @@ type sendHostExposureEntry struct {
 	Name       string `json:"name"`
 }
 
+type dhcpClientEntry []string
+
 type requestedHostExposure struct {
 	HostExposure []requestedHostExposureEntry `json:"hostExposure"`
+	DhcpClient []dhcpClientEntry `json:"dhcpclient"`
 }
 
 type setHostExposure struct {
@@ -101,7 +107,7 @@ type ExposedHost struct {
 	Enabled    bool
 	StartPort  int
 	EndPort    int
-	MacAddress string
+	MacAddress *macaddr.MACAddress
 	Protocol   ProtocolType
 }
 
@@ -135,8 +141,14 @@ func parseExposedHost(e requestedHostExposureEntry) (ExposedHost, error) {
 	if err != nil {
 		return ExposedHost{}, err
 	}
+
+	mac, err := macaddr.ParseMACAddress(e.MacAddress)
+	if err != nil {
+		return ExposedHost{}, err
+	}
+
 	return ExposedHost{
-		index, e.Name, enabled, startPort, endPort, e.MacAddress, protocol,
+		index, e.Name, enabled, startPort, endPort, mac, protocol,
 	}, nil
 }
 
@@ -156,7 +168,7 @@ func makeNetworkHostExposure(e ExposedHost) sendHostExposureEntry {
 			strconv.Itoa(e.StartPort),
 		},
 		enable,
-		e.MacAddress,
+		e.MacAddress.String(),
 		e.Name,
 	}
 }
@@ -165,25 +177,33 @@ func (e ExposedHost) String() string {
 	return fmt.Sprintf("%d: %s (%s), %s %d-%d (%t)", e.Index, e.Name, e.MacAddress, e.Protocol.String(), e.StartPort, e.EndPort, e.Enabled)
 }
 
-// Requests the list of exposed hosts from the vodafone station
-func (v *Vodafone) GetExposedHosts() ([]ExposedHost, error) {
+func (v *Vodafone) getRawHostsAndNames() (requestedHostExposure, error) {
 	if !v.loggedIn {
-		return nil, &NotLoggedInError{}
+		return requestedHostExposure{}, &NotLoggedInError{}
 	}
 
-	resp, err := v.Get("net_ipv6_host_exposure_data.php", `{"hostExposure":{}}`)
+	resp, err := v.Get("net_ipv6_host_exposure_data.php", `{"hostExposure":{},"dhcpclient":{}}`)
 	if err != nil {
-		return nil, err
+		return requestedHostExposure{}, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return requestedHostExposure{}, err
 	}
-	fmt.Println(string(body))
+
 	var rq requestedHostExposure
 	if err := json.Unmarshal(body, &rq); err != nil {
+		return requestedHostExposure{}, err
+	}
+	return rq, nil
+}
+
+// Requests the list of exposed hosts from the vodafone station
+func (v *Vodafone) GetExposedHosts() ([]ExposedHost, error) {
+	rq, err := v.getRawHostsAndNames()
+	if err != nil {
 		return nil, err
 	}
 
@@ -199,9 +219,71 @@ func (v *Vodafone) GetExposedHosts() ([]ExposedHost, error) {
 	return ret, nil
 }
 
+// Returns whether a given macAddress is present in the list of exposed hosts.
+// It does not state whether the found rule is enabled.
+func (v *Vodafone) ContainsExposedHostMac(macAddress string) (bool, error) {
+	mac, err := macaddr.ParseMACAddress(macAddress)
+	if err != nil {
+		return false, err
+	}
+
+	hosts, err := v.GetExposedHosts()
+	if err != nil {
+		return false, err
+	}
+
+	for _, e := range hosts {
+		if e.MacAddress.Equal(mac) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Returns whether a given name is present in the list of exposed hosts.
+// It does not state whether the found rule is enabled.
+func (v *Vodafone) ContainsExposedHostName(name string) (bool, error) {
+	rq, err := v.getRawHostsAndNames()
+	if err != nil {
+		return false, err
+	}
+
+	var macs []*macaddr.MACAddress // this is an array since several hosts could have the same name
+	for _, host := range rq.DhcpClient {
+		if name == host[0] {
+			mac, err := macaddr.ParseMACAddress(host[1]) // save the mac address for this host
+			if err != nil {
+				return false, err
+			}
+			macs = append(macs, mac)
+			break
+		}
+	}
+	if len(macs) == 0 {
+		return false, nil // there is no host with the given name
+	}
+
+	for _, mac := range macs {
+		for _, e := range rq.HostExposure {
+			hostMac, err := macaddr.ParseMACAddress(e.MacAddress)
+			if err != nil {
+				return false, err
+			}
+			if hostMac.Equal(mac) {
+				return true, nil // we have found one match. Thats enough, we return
+			}
+		}
+	}
+
+	return false, nil // we have found no match
+}
+
 // Sets the list of exposed hosts.
 // This function does not append hosts, it overrides the current list.
 func (v *Vodafone) SetExposedHosts(exposedHosts []ExposedHost) error {
+	if !v.loggedIn {
+		return &NotLoggedInError{}
+	}
 	// convert the typed version of exposed hosts to the required only-string-values
 	s := setHostExposure{
 		make([]sendHostExposureEntry, len(exposedHosts)),

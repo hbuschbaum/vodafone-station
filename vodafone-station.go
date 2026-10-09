@@ -110,7 +110,7 @@ func (v *Vodafone) Post(endpoint string, data io.Reader) (*http.Response, error)
 }
 
 func (v *Vodafone) initCrypto() error {
-	resp, err := v.client.Get(v.host + "/")
+	resp, err := v.client.Get(v.host + "/") // request the root document
 	if err != nil {
 		return err
 	}
@@ -119,6 +119,7 @@ func (v *Vodafone) initCrypto() error {
 	if len(setCookieValues) == 0 {
 		return fmt.Errorf("Could not find required values (cookie)")
 	}
+	// extract session id
 	v.sessionId = strings.Split(strings.Split(setCookieValues[0], "=")[1], ";")[0]
 	v.cookie = "PHPSESSID=" + v.sessionId
 	doc, err := html.Parse(resp.Body)
@@ -126,6 +127,7 @@ func (v *Vodafone) initCrypto() error {
 		return err
 	}
 	// Find correct script tag
+	// html -> head -> script (most likely the second script tag)
 	var currNode *html.Node
 	for n := range doc.Descendants() {
 		if n.DataAtom == atom.Head {
@@ -162,6 +164,7 @@ func (v *Vodafone) setSession() error {
 	if err != nil {
 		return err
 	}
+	// here we could check whether the returned value is "yes"
 	v.loggedIn = true
 	return nil
 }
@@ -241,4 +244,8 @@ func (v *Vodafone) Login(username, password string) error {
 func (v *Vodafone) Logout() {
 	v.Post("logout.php", nil)
 	v.loggedIn = false
+}
+
+func (v *Vodafone) IsLoggedIn() bool {
+	return v.loggedIn
 }
