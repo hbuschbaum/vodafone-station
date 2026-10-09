@@ -201,7 +201,7 @@ func (v *Vodafone) getRawHostsAndNames() (requestedHostExposure, error) {
 }
 
 // Requests the list of exposed hosts from the vodafone station
-func (v *Vodafone) GetExposedHosts() ([]ExposedHost, error) {
+func (v *Vodafone) HostExposureGet() ([]ExposedHost, error) {
 	rq, err := v.getRawHostsAndNames()
 	if err != nil {
 		return nil, err
@@ -221,13 +221,13 @@ func (v *Vodafone) GetExposedHosts() ([]ExposedHost, error) {
 
 // Returns whether a given macAddress is present in the list of exposed hosts.
 // It does not state whether the found rule is enabled.
-func (v *Vodafone) ContainsExposedHostMac(macAddress string) (bool, error) {
+func (v *Vodafone) HostExposureContainsMac(macAddress string) (bool, error) {
 	mac, err := macaddr.ParseMACAddress(macAddress)
 	if err != nil {
 		return false, err
 	}
 
-	hosts, err := v.GetExposedHosts()
+	hosts, err := v.HostExposureGet()
 	if err != nil {
 		return false, err
 	}
@@ -242,7 +242,7 @@ func (v *Vodafone) ContainsExposedHostMac(macAddress string) (bool, error) {
 
 // Returns whether a given name is present in the list of exposed hosts.
 // It does not state whether the found rule is enabled.
-func (v *Vodafone) ContainsExposedHostName(name string) (bool, error) {
+func (v *Vodafone) HostExposureContainsName(name string) (bool, error) {
 	rq, err := v.getRawHostsAndNames()
 	if err != nil {
 		return false, err
@@ -280,7 +280,7 @@ func (v *Vodafone) ContainsExposedHostName(name string) (bool, error) {
 
 // Sets the list of exposed hosts.
 // This function does not append hosts, it overrides the current list.
-func (v *Vodafone) SetExposedHosts(exposedHosts []ExposedHost) error {
+func (v *Vodafone) HostExposureSet(exposedHosts []ExposedHost) error {
 	if !v.loggedIn {
 		return &NotLoggedInError{}
 	}
@@ -301,4 +301,28 @@ func (v *Vodafone) SetExposedHosts(exposedHosts []ExposedHost) error {
 
 	_, err = v.Post("ajaxSet_net_ipv6_host_exposure_data.php", r)
 	return err
+}
+
+// Appends an [ExposedHost] to the list of exposed hosts. Any set [ExposedHost.Index] will be overwritten by tge correct one.
+func (v *Vodafone) HostExposureAppend(exposedHost ExposedHost) error {
+	if !v.loggedIn {
+		return &NotLoggedInError{}
+	}
+
+	hosts, err := v.HostExposureGet()
+	if err != nil {
+		return err
+	}
+
+	maxIndex := 0
+	for _, h := range hosts {
+		if h.Index > maxIndex {
+			maxIndex = h.Index
+		}
+	}
+
+	exposedHost.Index = maxIndex + 1
+	hosts = append(hosts, exposedHost)
+
+	return v.HostExposureSet(hosts)
 }
