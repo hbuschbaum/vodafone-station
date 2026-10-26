@@ -63,10 +63,6 @@ func (v *Vodafone) HostExposureContainsName(name string) (bool, error) {
 
 // Appends an [ExposedHost] to the list of exposed hosts. Any set [ExposedHost.Index] will be overwritten by tge correct one.
 func (v *Vodafone) HostExposureAppend(exposedHost ExposedHost) error {
-	if !v.loggedIn {
-		return &NotLoggedInError{}
-	}
-
 	hosts, err := v.HostExposureGet()
 	if err != nil {
 		return err
@@ -121,4 +117,43 @@ func (v *Vodafone) HostExposureAppendRuleByName(ruleName string, hostname string
 	}
 
 	return v.HostExposureAppendRuleByMac(ruleName, mac, startPort, endPort, protocol, enabled)
+}
+
+func hostExposureGetGeneric[U any](v *Vodafone, condition func (ExposedHost) bool, wantedValue func (ExposedHost) U) (U, error) {
+	var res U
+	hosts, err := v.HostExposureGet()
+	if err != nil {
+		return res, err
+	}
+
+	for i := range hosts {
+		if condition(hosts[i]) {
+			return wantedValue(hosts[i]), nil
+		}
+	}
+	return res, fmt.Errorf("Not found")
+}
+
+func hostExposureSetGeneric[U any](v *Vodafone, value U, condition func (ExposedHost) bool, setFunction func(*ExposedHost, U)) error {
+	hosts, err := v.HostExposureGet()
+	if err != nil {
+		return err
+	}
+
+	for i := range hosts {
+		if condition(hosts[i]) {
+			setFunction(&hosts[i], value)
+			break
+		}
+	}
+	
+	return v.HostExposureSet(hosts)
+}
+
+func (v *Vodafone) HostExposureSetStatusByIndex(index int, status bool) error {
+	return hostExposureSetGeneric(v, status, func(e ExposedHost) bool {return e.Index == index}, func (e *ExposedHost, val bool) {e.Enabled = val})
+}
+
+func (v *Vodafone) HostExposureGetStatusByIndex(index int) (bool, error) {
+	return hostExposureGetGeneric(v, func(e ExposedHost) bool {return e.Index == index}, func (e ExposedHost) bool {return e.Enabled})
 }

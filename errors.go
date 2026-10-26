@@ -1,7 +1,5 @@
 package vodafone
 
-type NotLoggedInError struct{}
+import "errors"
 
-func (e *NotLoggedInError) Error() string {
-	return "not logged in"
-}
+var NotLoggedInError = errors.New("not logged in")

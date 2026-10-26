@@ -179,7 +179,7 @@ func (e ExposedHost) String() string {
 
 func (v *Vodafone) getRawHostsAndNames() (requestedHostExposure, error) {
 	if !v.loggedIn {
-		return requestedHostExposure{}, &NotLoggedInError{}
+		return requestedHostExposure{}, NotLoggedInError
 	}
 
 	resp, err := v.Get("net_ipv6_host_exposure_data.php", `{"hostExposure":{},"dhcpclient":{}}`)
@@ -223,7 +223,7 @@ func (v *Vodafone) HostExposureGet() ([]ExposedHost, error) {
 // This function does not append hosts, it overrides the current list.
 func (v *Vodafone) HostExposureSet(exposedHosts []ExposedHost) error {
 	if !v.loggedIn {
-		return &NotLoggedInError{}
+		return NotLoggedInError
 	}
 	// convert the typed version of exposed hosts to the required only-string-values
 	s := setHostExposure{
