@@ -308,7 +308,7 @@ func (v *Vodafone) DhcpLeaseGet() ([]DhcpLease, error) {
 		}
 		durations := strings.SplitSeq(dev[5].(string), ", ")
 		for dur := range durations {
-			if strings.Contains(dur, "d") {
+			if dur[len(dur)-1] == 'd' {
 				days, err := strconv.Atoi(dur[:len(dur)-1])
 				if err != nil {
 					return nil, err
