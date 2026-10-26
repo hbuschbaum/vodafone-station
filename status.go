@@ -255,7 +255,6 @@ func (v *Vodafone) StatusGet() (*Status, error) {
 	return &status, scanner.Err()
 }
 
-
 type dhcpLeaseResponse struct {
 	DhcpDevInfo [][]any `json:"dhcpDevInfo"`
 }
@@ -314,18 +313,13 @@ func (v *Vodafone) DhcpLeaseGet() ([]DhcpLease, error) {
 				if err != nil {
 					return nil, err
 				}
-				parsedDays, err := time.ParseDuration(strconv.Itoa(24*days) + "h")
-				if err != nil {
-					return nil, err
-				}
-				res[i].Valid += parsedDays
-			} else {
-				parsed, err := time.ParseDuration(dur)
-				if err != nil {
-					return nil, err
-				}
-				res[i].Valid += parsed
+				dur = strconv.Itoa(24*days) + "h"
 			}
+			parsed, err := time.ParseDuration(dur)
+			if err != nil {
+				return nil, err
+			}
+			res[i].Valid += parsed
 		}
 	}
 
